@@ -24,6 +24,7 @@ package com.xilinx.rapidwright.placer.blockplacer;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -178,15 +179,26 @@ public class BlockPlacer2 {
 	
 	private void initialPlacement(){
 		currentPlacements = new HashMap<Site, HardMacro>();
+		int mcIndex = 0;
+		for (int i = 0; i < hardMacros.size(); i++) {
+			if (hardMacros.get(i).getName().startsWith("StreamingMem")) {
+				mcIndex = i;
+				break;
+			}
+		}
+		Collections.swap(hardMacros, 0, mcIndex);
+		HardMacro mc = hardMacros.get(0); // memory controller
 
 		Device dev = design.getDevice(); 
-		Tile center = dev.getTile(dev.getRows()/2, dev.getColumns()/2);
+		Tile center = dev.getTile(dev.getRows()/2, 0);
 		PriorityQueue<Site> sites = new PriorityQueue<Site>(1024, new Comparator<Site>() {
 			public int compare(Site i, Site j) {return i.getTile().getManhattanDistance(center) - j.getTile().getManhattanDistance(center);}});
 		// Place hard macros for initial placement
 		for(HardMacro hm : hardMacros){
-			sites.clear();
+			System.out.println("Placing " + hm.getName());
 			sites.addAll(hm.getValidPlacements());
+			System.out.println(sites.size() + " valid sites");
+			boolean placed = false;
 			while(!sites.isEmpty()){
 				Site site = sites.remove();
 				hm.setTempAnchorSite(site, currentPlacements);
@@ -195,9 +207,20 @@ public class BlockPlacer2 {
 						throw new RuntimeException("ERROR: Failed to place " + hm.getName() + " at " + site.getName());
 					}
 					hm.calculateTileSize();
+					placed = true;
 					break;
 				}
 			}
+			if (!placed) {
+				System.out.println("Failed to place " + hm.getName());
+			}
+			// for everything after the memory controller, compare to the memory controller
+			sites = new PriorityQueue<Site>(1024, new Comparator<Site>() {
+				public int compare(Site i, Site j) {
+					Tile mcAnchorTile = mc.getTempAnchorSite().getTile();
+					return i.getTile().getManhattanDistance(mcAnchorTile) - j.getTile().getManhattanDistance(mcAnchorTile);
+				}
+			});
 			/*for(Site site : hm.getValidPlacements()){
 				hm.setTempAnchorSite(site, currentPlacements);
 				if(checkValidPlacement(hm)){
@@ -366,6 +389,7 @@ public class BlockPlacer2 {
 		start = System.currentTimeMillis();
 		initializePlacer(debugFlow);
 		initialPlacement();
+		/*
 		//HandPlacer.openDesign(design);
 		int totalFootprint = 0;
 		for(HardMacro hm : hardMacros){
@@ -538,6 +562,7 @@ public class BlockPlacer2 {
 		if(DEBUG_LEVEL > 0) System.out.printf("  Perturbation Time: %.3f secs (%9.0f moves/sec)\n", placerRuntime,(totalMoves/placerRuntime));	
 		
 		if(DEBUG_LEVEL > 0) System.out.println("Final System Cost: " + finalSystemCost);
+		*/
 		/*
 		HashSet<HardMacro> fineTunePlacement = new HashSet<HardMacro>(); 
 		
@@ -599,11 +624,12 @@ public class BlockPlacer2 {
 		// Sort hard macros, largest first to place them first
 		HardMacro[] array = new HardMacro[hardMacros.size()];
 		array = hardMacros.toArray(array);
-		Arrays.sort(array);
+		Arrays.sort(array); //, Collections.reverseOrder());
 		
 		HashSet<Tile> usedTiles = new HashSet<Tile>();
 		// Perform final placement of all hard macros
 		for(HardMacro hm : array){	
+			hm.printLoc();
 			//System.out.println(moveCount.get(hm) + " " + hm.tileSize + " " + hm.getName());
 			HashSet<Tile> footPrint = isValidPlacement((ModuleInst)hm, hm.getModule().getAnchor().getSite(), hm.getTempAnchorSite().getTile(), usedTiles);
 			if(footPrint == null){

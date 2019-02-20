@@ -330,7 +330,7 @@ proc run_block_stitcher { } {
     set cachePath [get_property IP_OUTPUT_REPO [current_project]]
     
     puts "java -Xss16M com.xilinx.rapidwright.ipi.BlockStitcher ${cachePath}[cache_version_dir] $topLevelEdifFileName $ipsFileName"
-    puts [exec java -Xss16M com.xilinx.rapidwright.ipi.BlockStitcher "${cachePath}[cache_version_dir]" $topLevelEdifFileName $ipsFileName]    
+    puts [exec java -Xss16M -Xmx26G com.xilinx.rapidwright.ipi.BlockStitcher "${cachePath}[cache_version_dir]" $topLevelEdifFileName $ipsFileName]    
 }
 
 proc check_if_lsf_available {} {
