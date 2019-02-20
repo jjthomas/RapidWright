@@ -47,13 +47,11 @@ import com.xilinx.rapidwright.device.ClockRegion;
 import com.xilinx.rapidwright.device.Device;
 import com.xilinx.rapidwright.device.BELPin;
 import com.xilinx.rapidwright.device.Node;
-import com.xilinx.rapidwright.device.PIP;
 import com.xilinx.rapidwright.device.Part;
 import com.xilinx.rapidwright.device.PartNameTools;
 import com.xilinx.rapidwright.device.Site;
 import com.xilinx.rapidwright.device.SitePin;
 import com.xilinx.rapidwright.device.Tile;
-import com.xilinx.rapidwright.device.TileTypeEnum;
 import com.xilinx.rapidwright.device.Wire;
 import com.xilinx.rapidwright.edif.EDIFHierNet;
 import com.xilinx.rapidwright.edif.EDIFCell;
@@ -230,7 +228,7 @@ public class SLRCrosserGenerator {
 		EDIFNetlist n = d.getNetlist();
 		Cell c = d.getCell(bufName);
 		if(c == null){
-			c = d.createCell(bufName, d.getNetlistInstMap().get(bufName));
+			c = d.createCell(bufName, d.getNetlist().getCellInstFromHierName(bufName));
 		}
 		d.placeCell(c, s, s.getBEL("BUFCE"));
 		
@@ -387,6 +385,33 @@ public class SLRCrosserGenerator {
 	}
 	
 	/**
+	 * Creates/instantiates a BUFGCE in the design
+	 * @param d The current design
+	 * @param clkName Name of the clock net
+	 * @param clkInName Name of the clock in port
+	 * @param clkOutName Name of the clock out port, or null for none
+	 * @param bufgceInstName Name of the BUFGCE instance
+	 */
+	public static void createBUFGCE(Design d, String clkName, String clkInName, String clkOutName, String bufgceInstName){
+		EDIFNetlist n = d.getNetlist();
+		EDIFCell parent = n.getTopCell();
+		
+		// Create BUFGCE in netlist and connect it
+		EDIFCellInst bufgce = Design.createUnisimInst(parent, bufgceInstName, Unisim.BUFGCE);
+		EDIFNet clkInNet = parent.createNet(clkInName);
+		clkInNet.createPortInst(parent.createPort(clkInName, EDIFDirection.INPUT, 1));
+		
+		clkInNet.createPortInst("I", bufgce);
+		EDIFNet clkNet = parent.createNet(clkName);
+		clkNet.createPortInst("O", bufgce);
+		if(clkOutName != null){
+			clkNet.createPortInst(parent.createPort(clkOutName, EDIFDirection.OUTPUT, 1));
+		}
+		EDIFNet vccNet = EDIFTools.getStaticNet(NetType.VCC, parent, n);
+		vccNet.createPortInst("CE", bufgce);
+	}
+	
+	/**
 	 * Creates the logical netlist of the SLR crosser design.
 	 * @param d Current design 
 	 * @param busWidth Width of the buses to create
@@ -401,16 +426,10 @@ public class SLRCrosserGenerator {
 		EDIFCell parent = n.getTopCell();
 		
 		// Create BUFGCE in netlist and connect it
-		EDIFCellInst bufgce = Design.createUnisimInst(parent, bufgceInstName, Unisim.BUFGCE);
-		EDIFNet clkInNet = parent.createNet(clkInName);
-		clkInNet.createPortInst(parent.createPort(clkInName, EDIFDirection.INPUT, 1));
-		
-		clkInNet.createPortInst("I", bufgce);
-		EDIFNet clkNet = parent.createNet(clkName);
-		clkNet.createPortInst("O", bufgce);
-		clkNet.createPortInst(parent.createPort(clkOutName, EDIFDirection.OUTPUT, 1));
+		createBUFGCE(d, clkName, clkInName, clkOutName, bufgceInstName);
+
+		EDIFNet clkNet = parent.getNet(clkName);
 		EDIFNet vccNet = EDIFTools.getStaticNet(NetType.VCC, parent, n);
-		vccNet.createPortInst("CE", bufgce);
 		EDIFNet gndNet = EDIFTools.getStaticNet(NetType.GND, parent, n);
 		
 		// Create register pairs
@@ -502,7 +521,7 @@ public class SLRCrosserGenerator {
 			accepts(CLK_NAME_OPT).withOptionalArg().defaultsTo(clkName).describedAs("Clk net name");
 			accepts(CLK_IN_NAME_OPT).withOptionalArg().defaultsTo(clkInName).describedAs("Clk input net name");
 			accepts(CLK_OUT_NAME_OPT).withOptionalArg().defaultsTo(clkOutName).describedAs("Clk output net name");
-			accepts(CLK_CONSTRAINT_OPT).withOptionalArg().ofType(Double.class).defaultsTo(clkPeriodConstraint).describedAs("Clk period constraint (ns)");
+			accepts(CLK_CONSTRAINT_OPT).withRequiredArg().ofType(Double.class).describedAs("Clk period constraint (ns)");
 			accepts(BUS_WIDTH_OPT).withOptionalArg().ofType(Integer.class).defaultsTo(busWidth).describedAs("SLR crossing bus width");
 			accepts(INPUT_PREFIX_OPT).withOptionalArg().defaultsTo(inputPrefix).describedAs("Input bus name prefix");
 			accepts(OUTPUT_PREFIX_OPT).withOptionalArg().defaultsTo(outputPrefix).describedAs("Output bus name prefix");
@@ -529,7 +548,6 @@ public class SLRCrosserGenerator {
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
-		System.exit(0);
 	}
 	
 	public static void main(String[] args) {
@@ -539,6 +557,7 @@ public class SLRCrosserGenerator {
 		boolean verbose = (boolean) opts.valueOf(VERBOSE_OPT);
 		if(opts.has(HELP_OPT)){
 			printHelp(p);
+			return;
 		}
 		CodePerfTracker t = verbose ? new CodePerfTracker(SLRCrosserGenerator.class.getSimpleName(),true).start("Init") : null;
 		
@@ -552,7 +571,6 @@ public class SLRCrosserGenerator {
 		String clkName = (String) opts.valueOf(CLK_NAME_OPT);
 		String clkInName = (String) opts.valueOf(CLK_IN_NAME_OPT);
 		String clkOutName = (String) opts.valueOf(CLK_OUT_NAME_OPT);
-		double clkPeriodConstraint = (double) opts.valueOf(CLK_CONSTRAINT_OPT);
 		int busWidth = (int) opts.valueOf(BUS_WIDTH_OPT);		
 		String inputPrefix = (String) opts.valueOf(INPUT_PREFIX_OPT);
 		String outputPrefix= (String) opts.valueOf(OUTPUT_PREFIX_OPT);
@@ -561,6 +579,10 @@ public class SLRCrosserGenerator {
 		String[] lagunaNames = ((String) opts.valueOf(LAGUNA_SITES_OPT)).split(",");
 		boolean commonCentroid = (boolean) opts.valueOf(COMMON_CENTROID_OPT);
 		
+		Double clkPeriodConstraint = null;
+		if(opts.hasArgument(CLK_CONSTRAINT_OPT)){
+			clkPeriodConstraint = (double) opts.valueOf(CLK_CONSTRAINT_OPT);
+		}
 		// Perform some error checking on inputs
 		Part part = PartNameTools.getPart(partName);
 		if(part == null || !part.isUltraScalePlus()){
@@ -614,9 +636,13 @@ public class SLRCrosserGenerator {
 		Router r = new Router(d);
 		r.routeStaticNets();
 		t.stop();
-
+		
 		// Add a clock constraint
-		d.addXDCConstraint(ConstraintGroup.LATE, "create_clock -name "+clkName+" -period "+clkPeriodConstraint+" [get_nets "+clkName+"]");
+		if(clkPeriodConstraint != null){
+			d.addXDCConstraint(ConstraintGroup.LATE, "create_clock -name "+clkName+" -period "+clkPeriodConstraint+" [get_nets "+clkName+"]");
+			d.addXDCConstraint(ConstraintGroup.LATE, "create_property MAX_PROG_DELAY net"); 
+			d.addXDCConstraint(ConstraintGroup.LATE, "set_property MAX_PROG_DELAY 0 [get_nets "+clkName+"]");			
+		}
 		
 		d.writeCheckpoint(outputDCPFileName, t);
 		if(verbose) System.out.println("Wrote final DCP: " + outputDCPFileName);

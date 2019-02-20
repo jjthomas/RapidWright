@@ -34,7 +34,7 @@ import java.util.Map;
 
 /**
  * A cell instance in a logical (EDIF) netlist.  Instantiates
- * an {@link EDIFCellInst}.
+ * an {@link EDIFCell}.
  * 
  * Created on: May 11, 2017
  */
@@ -162,6 +162,14 @@ public class EDIFCellInst extends EDIFPropertyObject {
 	 */
 	public EDIFCell getCellType() {
 		return cellType;
+	}
+
+	public Collection<EDIFPort> getCellPorts(){
+		return cellType.getPorts();
+	}
+	
+	public String getCellName(){
+		return cellType.getName();
 	}
 
 	/**

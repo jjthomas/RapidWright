@@ -24,6 +24,7 @@
 package com.xilinx.rapidwright.debug;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.TreeMap;
@@ -38,6 +39,7 @@ import com.xilinx.rapidwright.edif.EDIFHierCellInst;
 import com.xilinx.rapidwright.edif.EDIFHierPortInst;
 import com.xilinx.rapidwright.edif.EDIFCellInst;
 import com.xilinx.rapidwright.edif.EDIFNet;
+import com.xilinx.rapidwright.edif.EDIFPort;
 import com.xilinx.rapidwright.edif.EDIFPortInst;
 import com.xilinx.rapidwright.edif.EDIFTools;
 import com.xilinx.rapidwright.router.Router;
@@ -56,7 +58,25 @@ public class ProbeRouter {
 		}
 		return map;
 	}
-		
+	
+	/**
+	 * Updates a design containing an ILA (integrated logic analyzer) probe connections
+	 * that already exist in a design.  
+	 * @param d The existing placed and routed design with an ILA.
+	 * @param probeToTargetNets A map from probe names to desired net names (full hierarchical names).
+	 * @param pblock An optional pblock (area constraint) to contain routing within a certain area.
+	 */	
+	public static void updateProbeConnections(Design d, Map<String,String> probeToTargetNets){
+		updateProbeConnections(d, probeToTargetNets, null);
+	}
+	
+	/**
+	 * Updates a design containing an ILA (integrated logic analyzer) probe connections
+	 * that already exist in a design.  
+	 * @param d The existing placed and routed design with an ILA.
+	 * @param probeToTargetNets A map from probe names to desired net names (full hierarchical names).
+	 * @param pblock An optional pblock (area constraint) to contain routing within a certain area.
+	 */
 	public static void updateProbeConnections(Design d, Map<String,String> probeToTargetNets, PBlock pblock){
 		ArrayList<SitePinInst> pinsToRoute = new ArrayList<>(); 
 		for(Entry<String,String> e : probeToTargetNets.entrySet()){
@@ -70,7 +90,8 @@ public class ProbeRouter {
 			Net oldPhysNet = d.getNetlist().getPhysicalNetFromPin(parentCellInstName, portInst, d);
 			
 			// Find the sink flop
-			EDIFHierPortInst startingPoint = new EDIFHierPortInst(cellInstName.substring(0, cellInstName.lastIndexOf('/')), portInst);
+			String hierInstName = cellInstName.contains(EDIFTools.EDIF_HIER_SEP) ? cellInstName.substring(0, cellInstName.lastIndexOf('/')) : ""; 
+			EDIFHierPortInst startingPoint = new EDIFHierPortInst(hierInstName, portInst);
 			ArrayList<EDIFHierPortInst> sinks = EDIFTools.findSinks(startingPoint);
 			if(sinks.size() != 1) {
 				System.err.println("ERROR: Currently we only support a single flip flop "
@@ -123,10 +144,26 @@ public class ProbeRouter {
 		}
 		
 		// Attempt route new net to probe
-		   // Should we add a flop?
+		// TODO - Should we add a flop?
 		Router r = new Router(d);
 		if(pblock != null) r.setRoutingPblock(pblock);
 		r.routePinsReEntrant(pinsToRoute, false);
+	}
+	
+	public static List<EDIFHierCellInst> findILAs(Design d){
+		List<EDIFHierCellInst> candidates = d.getNetlist().getAllDescendants("", "u_ila_*", false);
+		ArrayList<EDIFHierCellInst> ilas = new ArrayList<EDIFHierCellInst>();
+		nextInst: for(EDIFHierCellInst i : candidates){
+			if(i.getCellName().contains("u_ila_")){
+				for(EDIFPort p : i.getCellType().getPorts()){
+					if(p.getName().contains("SL_IPORT_")){
+						ilas.add(i);
+						continue nextInst;
+					}
+				}
+			}
+		}
+		return ilas;
 	}
 	
 	private static final String PBLOCK_SWITCH = "--pblock";
