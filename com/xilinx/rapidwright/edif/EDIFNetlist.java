@@ -796,6 +796,11 @@ public class EDIFNetlist extends EDIFName {
 		return parentNetMap;
 	}
 	
+	public void resetParentNetMap(){
+		parentNetMap = null;
+		physicalNetPinMap = null;
+	}
+	
 	private void generateParentNetMap(){
 		long start = 0;
 		if(DEBUG){
@@ -916,6 +921,7 @@ public class EDIFNetlist extends EDIFName {
 				}else{
 					// Going down in hierarchy
 					EDIFNet internalNet = portInst.getInternalNet();
+					if(internalNet == null) continue;
 					String hierName = curr.getHierarchicalInstName() + EDIFTools.EDIF_HIER_SEP + portInst.getCellInst().getName();
 					q.add(new EDIFHierNet(hierName,internalNet));
 				}

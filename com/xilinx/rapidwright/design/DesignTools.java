@@ -48,9 +48,11 @@ import com.xilinx.rapidwright.device.BELClass;
 import com.xilinx.rapidwright.device.BELPin;
 import com.xilinx.rapidwright.device.Node;
 import com.xilinx.rapidwright.device.PIP;
+import com.xilinx.rapidwright.device.Site;
 import com.xilinx.rapidwright.device.BEL;
 import com.xilinx.rapidwright.device.SitePIP;
 import com.xilinx.rapidwright.device.SiteTypeEnum;
+import com.xilinx.rapidwright.device.Tile;
 import com.xilinx.rapidwright.device.Wire;
 import com.xilinx.rapidwright.edif.EDIFCell;
 import com.xilinx.rapidwright.edif.EDIFCellInst;
@@ -63,6 +65,7 @@ import com.xilinx.rapidwright.edif.EDIFPort;
 import com.xilinx.rapidwright.edif.EDIFPortInst;
 import com.xilinx.rapidwright.edif.EDIFTools;
 import com.xilinx.rapidwright.router.RouteNode;
+import com.xilinx.rapidwright.tests.CodePerfTracker;
 import com.xilinx.rapidwright.util.MessageGenerator;
 import com.xilinx.rapidwright.util.Utils;
 
@@ -534,6 +537,9 @@ public class DesignTools {
 		// Get the connected site pin from cell pin 
 		String sitePinName = cellPin.getConnectedSitePinName();
 		if(sitePinName == null){
+			sitePinName = cell.getCorrespondingSitePinName(cellPinName);
+		}
+		if(sitePinName == null){
 			throw new RuntimeException("ERROR: Couldn't find corresponding site pin for element pin " + cellPin + ".");
 		}
 		if(!cell.getSiteInst().getSite().hasPin(sitePinName)){
@@ -543,7 +549,8 @@ public class DesignTools {
 		SitePinInst sitePin = new SitePinInst(cellPin.isOutput(), sitePinName, cell.getSiteInst());
 		if(sitePin.isOutPin()){
 			SitePinInst oldSource = net.replaceSource(sitePin);
-			oldSource.detachSiteInst();
+			if(oldSource != null)
+				oldSource.detachSiteInst();
 		}else{
 			net.addPin(sitePin);			
 		}
@@ -906,14 +913,17 @@ public class DesignTools {
 	 * @param hierarchicalCellName The name of the hierarchical cell to become a black box.
 	 */
 	public static void makeBlackBox(Design d, String hierarchicalCellName){
+		CodePerfTracker t = CodePerfTracker.SILENT;//  new CodePerfTracker("makeBlackBox", true);
+		t.start("Init");
 		EDIFCellInst futureBlackBox = d.getNetlist().getCellInstFromHierName(hierarchicalCellName);
 		if(futureBlackBox == null) throw new RuntimeException("ERROR: Couldn't find cell " + hierarchicalCellName + " in source design " + d.getName());
 		
 		Set<SiteInst> touched = new HashSet<>();
 		Map<String,String> boundaryNets = new HashMap<>();
 		
+		t.stop().start("Find border nets");
 		// Find all the nets that connect to the cell (keep them)
-		for(EDIFPortInst portInst : futureBlackBox.getPortInsts()){
+		for(EDIFPortInst portInst : futureBlackBox.getPortInsts()){		
 			EDIFNet net = portInst.getNet();
 			String hierParentName = EDIFTools.getHierarchicalRootFromPinName(hierarchicalCellName);
 			String hierNetName = hierParentName + EDIFTools.EDIF_HIER_SEP + net.getName();
@@ -936,15 +946,25 @@ public class DesignTools {
 					String sitePinName = c.getCorrespondingSitePinName(logicalPinName);
 					SitePinInst pin = i.getSitePinInst(sitePinName);
 					Net staticNet = d.getStaticNet(netType);
-					removeConnectedRouting(staticNet, new Node(pin.getTile(),pin.getConnectedTileWire()));
+					Site site = i.getSite();
 					BELPin snk = c.getBEL().getPin(c.getPhysicalPinMapping(logicalPinName));
-					i.unrouteIntraSiteNet(i.getSite().getBELPin(sitePinName), snk);
+					if(pin == null && netType == NetType.GND){
+						// GND post inside the site, let's unroute the site wires
+						i.unrouteIntraSiteNet(site.getBELPin("HARD0GND", "0"), snk);
+						continue;
+					}
+					removeConnectedRouting(staticNet, new Node(pin.getTile(),pin.getConnectedTileWire()));
+					i.unrouteIntraSiteNet(site.getBELPin(sitePinName), snk);
 				}
 			}
 		}
 		
+		t.stop().start("Remove p&r");
+
+		List<EDIFHierCellInst> allLeafs = d.getNetlist().getAllLeafDescendants(hierarchicalCellName);
+
 		// Remove all placement and routing information related to the cell to be blackboxed
-		for(EDIFHierCellInst i : d.getNetlist().getAllLeafDescendants(hierarchicalCellName)){
+		for(EDIFHierCellInst i : allLeafs){
 			// Get the physical cell, make sure we can unplace/unroute it first 
 			Cell c = d.getCell(i.getFullHierarchicalInstName());
 			if(c == null) {
@@ -978,6 +998,8 @@ public class DesignTools {
 			si.removeCell(bel);
 		}
 		
+		t.stop().start("cleanup t-prims");
+		
 		// Clean up any cells from Transformed Prims
 		for(SiteInst si : d.getSiteInsts()){
 			for(Cell c : si.getCells()){
@@ -986,6 +1008,8 @@ public class DesignTools {
 				}
 			}
 		}
+		
+		t.stop().start("new net names");
 		
 		Map<Net, String> netsToUpdate = new HashMap<>();
 		// Update black box output nets with new net names (those with sinks inside the black box)
@@ -1001,10 +1025,14 @@ public class DesignTools {
 			DesignTools.updateNetName(d, e.getKey(), newSource.getNet(), e.getValue());
 		}
 		
+		t.stop().start("cleanup siteinsts");
+		
 		// Clean up SiteInst objects
 		for(SiteInst siteInst : touched){
 			d.removeSiteInst(siteInst);
 		}
+		
+		t.stop().start("create bbox");
 		
 		// Make EDIFCell blackbox
 		EDIFCell blackBox = new EDIFCell(futureBlackBox.getCellType().getLibrary(),"black_box");
@@ -1013,6 +1041,8 @@ public class DesignTools {
 		}
 		futureBlackBox.setCellType(blackBox);
 		futureBlackBox.addProperty(EDIFCellInst.BLACK_BOX_PROP, true);
+		
+		t.stop().printSummary();
 	}
 
 	/**
@@ -1038,5 +1068,115 @@ public class DesignTools {
 		}
 		
 		return newNet;
+	}
+
+	/**
+	 * Gets or creates the corresponding SiteInst from the prototype orig from a module.
+	 * @param design The current design from which to get the corresponding site instance.
+	 * @param orig The original site instance (from the module)
+	 * @param newAnchor The new anchor location of the module.
+	 * @param module The Module to use as the template.
+	 * @return The corresponding SiteInst from design if it exists, 
+	 * or a newly created one in the translated location. If the new location
+	 * cannot be determined or is invalid, null is returned.
+	 */
+	public static SiteInst getCorrespondingSiteInst(Design design, SiteInst orig, Site newAnchor, Module module){
+		Tile newTile = Module.getCorrespondingTile(orig.getTile(), newAnchor.getTile(), module.getAnchor().getTile());
+		Site newSite = newTile.getSites()[orig.getSite().getSiteIndexInTile()];
+		SiteInst newSiteInst = design.getSiteInstFromSite(newSite);
+		if(newSiteInst == null){
+			newSiteInst = design.createSiteInst(newSite.getName(), orig.getSiteTypeEnum(), newSite);
+		}
+		return newSiteInst; 
+	}
+
+	/**
+	 * Given a design with multiple identical cell instances, place
+	 * each of those instances using the stamp module template
+	 * at the anchored site locations provided in instPlacements. 
+	 * @param design The top level design with identical multiple cell instances.
+	 * @param stamp The prototype stamp (or stencil) to use for replicated placement and routing.
+	 * This must match identically with the named instances in instPlacements
+	 * @param instPlacements
+	 * @return True if the procedure completed successfully, false otherwise.
+	 */
+	public static boolean stampPlacement(Design design, Module stamp, Map<String,Site> instPlacements){
+		for(Entry<String,Site> e : instPlacements.entrySet()){
+			String instName = e.getKey();
+			String prefix = instName + "/";
+			Site newAnchor = e.getValue();
+			Site anchor = stamp.getAnchor().getSite();
+			
+			// Create New Nets
+			for(Net n : stamp.getNets()){
+				Net newNet = null;
+				if(n.isStaticNet()){
+					newNet = n.getName().equals(Net.GND_NET) ? design.getGndNet() : design.getVccNet();
+				}else{
+					String newNetName = prefix + n.getName();
+					EDIFNet newEDIFNet = design.getNetlist().getNetFromHierName(newNetName);
+					newNet = design.createNet(newNetName, newEDIFNet);					
+				}
+				
+				for(SitePinInst p : n.getPins()){
+					SiteInst newSiteInst = getCorrespondingSiteInst(design, p.getSiteInst(), newAnchor, stamp);
+					if(newSiteInst == null) 
+						return false;
+					SitePinInst newPin = new SitePinInst(p.isOutPin(), p.getName(), newSiteInst);
+					newNet.addPin(newPin);
+				}
+				
+				for(PIP p : n.getPIPs()){
+					Tile newTile = Module.getCorrespondingTile(p.getTile(), newAnchor.getTile(), anchor.getTile());
+					if(newTile == null){
+						return false;
+					}
+					PIP newPIP = new PIP(newTile, p.getStartWireIndex(), p.getEndWireIndex());
+					newNet.addPIP(newPIP);
+				}
+			}	
+	
+			// Create SiteInst & New Cells
+			for(SiteInst si : stamp.getSiteInsts()){
+				SiteInst newSiteInst = getCorrespondingSiteInst(design, si, newAnchor, stamp);
+				if(newSiteInst == null) 
+					return false;
+				for(Cell c : si.getCells()){
+					String newCellName = prefix + c.getName();
+					EDIFCellInst cellInst = design.getNetlist().getCellInstFromHierName(newCellName);
+					if(cellInst == null && c.getEDIFCellInst() != null) {
+						System.out.println("WARNING: Stamped cell not found: " + newCellName);
+						continue;
+					}
+					
+					Cell newCell = c.copyCell(newCellName, cellInst); 
+					design.placeCell(newCell, newSiteInst.getSite(), c.getBEL(), c.getPinMappingsP2L());
+				}
+				
+				for(SitePIP sitePIP : si.getUsedSitePIPs()){
+					newSiteInst.addSitePIP(sitePIP);
+				}
+				
+				for(Entry<String,Net> e2 : si.getNetSiteWireMap().entrySet()){
+					String siteWire = e2.getKey();
+					String netName = e2.getValue().getName();
+					Net newNet = null;
+					if(e2.getValue().isStaticNet()){
+						newNet = netName.equals(Net.GND_NET) ? design.getGndNet() : design.getVccNet(); 
+					}else if(netName.equals(Net.USED_NET)){
+						newNet = design.getNet(Net.USED_NET);
+						if(newNet == null){
+							newNet = new Net(Net.USED_NET);
+						}
+					}else{
+						newNet = design.getNet(prefix + netName);
+					}
+					
+					BELPin[] belPins = newSiteInst.getSite().getBELPins(siteWire);
+					newSiteInst.routeIntraSiteNet(newNet, belPins[0], belPins[0]);
+				}
+			}
+		}
+		return true;
 	}
 }
