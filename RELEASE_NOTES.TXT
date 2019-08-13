@@ -1,4 +1,48 @@
-============= RapidWright 2018.3.2-beta released on 2019-04-26 =================
+============= RapidWright 2019.1.1-beta released on 2019-08-07 =================
+Notes:
+ - API Additions:
+   - com.xilinx.rapidwright.design.Design "public boolean removeSiteInst(SiteInst instance, boolean keepSitePinRouting)"
+   - com.xilinx.rapidwright.design.Net "public Set<SiteInst> getSiteInsts()"
+ - Removed APIs:
+   - com.xilinx.rapidwright.design.SitePinInst "public ArrayList<Cell> getConnectedCells()"
+   - com.xilinx.rapidwright.design.Design "public HashMap<String,EDIFPort> getNetlistPortMap()"
+ - Improved GraalVM compatibility for C++ shared library creation.
+   Some data files were being loaded using certain Kryo APIs that are
+   incompatible with the native compilation flow in GraalVM.  This
+   release replaced those APIs and improved startup time for use of
+   those files by >10X (1.2 secs -> 0.1 secs).
+ - Fixes a subtle internal site routing issue when creating module instances.  Most
+   commonly seen on BRAMs with REGCLK* pins.  This ensures internal site routing
+   matches to original template SiteInst.
+ - Several bug fixes (see commit log for details).   
+
+============= RapidWright 2019.1.0-beta released on 2019-07-01 =================
+Notes:
+ - API Additions:
+   - com.xilinx.rapidwright.device.Node "public boolean isTiedToGnd()"
+   - com.xilinx.rapidwright.device.Node "public boolean isTiedToVcc()"
+   - com.xilinx.rapidwright.device.Node "public boolean isTied()"
+   - com.xilinx.rapidwright.design.Cell "public List<String> getAllPhysicalPinMappings(String logicalPin)"
+   - com.xilinx.rapidwright.design.Net "public boolean rename(String newName)"
+ - Deprecated APIs:
+   - com.xilinx.rapidwright.design.SitePinInst "public ArrayList<Cell> getConnectedCells()"
+   - com.xilinx.rapidwright.design.Design "public HashMap<String,EDIFPort> getNetlistPortMap()"
+ - Bug Fixes:
+   - Issue #32 - Adding the tied value of a node, see API additions above.
+   - Issue #29 - Site.getIntTile() issues
+   - Issue #12,#28 - Inserting 'src' folder as parent to 'com' folder.
+   - Issue #33 - Fixes for createIBUFDS()
+   - Issue #34 - Design.getNetlistPortMap() deprecated
+   - Issue #36 - Updating Javadoc to reflect Routethru behavior
+   - Issue #37 - Added getAllPhysicalPinMappings()
+   - Issue #38,#39 - Created DesignTools.getConnectedCells(SitePinInst)
+ - Support for Vivado 2019.1 devices.
+ - Changes to enable GraalVM shared library compilation for
+   interoperability with C++ (see documentation for tutorial details).
+ - Several bug fixes (see commit log for details).   
+ 
+
+============= RapidWright 2018.3.3-beta released on 2019-04-26 =================
 Notes:
  - API Additions:
    - com.xilinx.rapidwright.design.Cell "public boolean copyCell(String name, EDIFCellInst edifCellInst)"

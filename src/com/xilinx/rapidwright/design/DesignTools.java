@@ -427,9 +427,9 @@ public class DesignTools {
 	 */
 	public static boolean areAllPinsConnectedToALUT(Net n){
 		for(SitePinInst p : n.getPins()){
-			ArrayList<Cell> connectedCells = p.getConnectedCells();
+			Set<Cell> connectedCells = getConnectedCells(p);
 			if(connectedCells == null || connectedCells.size() == 0) return false;
-			for(Cell lut : p.getConnectedCells()){
+			for(Cell lut : connectedCells){
 				if(!lut.getType().contains("LUT")){
 					return false;
 				}
@@ -1178,5 +1178,37 @@ public class DesignTools {
 			}
 		}
 		return true;
+	}
+	
+	/**
+	 * Looks in the site instance for cells connected to this site pin.
+	 * @return List of connected cells to this pin
+	 */
+	public static Set<Cell> getConnectedCells(SitePinInst pin){
+		HashSet<Cell> cells = new HashSet<Cell>();
+		SiteInst si = pin.getSiteInst();
+		if(si == null) return cells;
+		for(BELPin p : pin.getBELPin().getSiteConns()){
+			if(p.getBEL().getBELClass() == BELClass.RBEL){
+				SitePIP pip = si.getUsedSitePIP(p.getBEL().getName());
+				if(pip == null) continue;
+				if(p.isOutput()){
+					p = pip.getInputPin().getSiteConns().get(0);
+					Cell c = si.getCell(p.getBEL().getName());
+					if(c != null) cells.add(c);
+				}else{
+					for(BELPin snk : pip.getOutputPin().getSiteConns()){
+						Cell c = si.getCell(snk.getBEL().getName());
+						if(c != null) cells.add(c);
+					}
+				}
+			}else{
+				Cell c = si.getCell(p.getBEL().getName());
+				if(c != null && c.getLogicalPinMapping(p.getName()) != null) {
+					cells.add(c);				
+				}
+			}
+		}
+		return cells;
 	}
 }

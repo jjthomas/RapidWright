@@ -175,15 +175,15 @@ public class EDIFNetlist extends EDIFName {
 	public void removeUnusedCellsFromWorkLibrary(){
 		HashMap<String,EDIFCell> cellsToRemove = new HashMap<>(getWorkLibrary().getCellMap());
 		
+		cellsToRemove.remove(getTopCell().getLegalEDIFName());
 		for(EDIFHierCellInst i : getAllDescendants("", null, false)){
 			if(i.getCellType().getLibrary().getName().equals(EDIFTools.EDIF_LIBRARY_WORK_NAME)){
-				cellsToRemove.remove(i.getCellType().getEDIFName());
+				cellsToRemove.remove(i.getCellType().getLegalEDIFName());
 			}
 		}
 		
 		for(String name : cellsToRemove.keySet()){
 			getWorkLibrary().removeCell(name);
-			System.out.println(name);
 		}
 	}
 	
@@ -251,6 +251,39 @@ public class EDIFNetlist extends EDIFName {
 		return comments;
 	}
 
+	/**
+	 * Migrates all cells in the provided library
+	 * into the standard work library.  
+	 * @param library The library with cells to be migrated to work.
+	 */
+	public void migrateToWorkLibrary(String library) {
+		EDIFLibrary work = getWorkLibrary();
+		EDIFLibrary oldWork = getLibrary(library);
+		List<EDIFCell> toRemove = new ArrayList<>(oldWork.getCells());
+		for (EDIFCell c : toRemove) {
+			work.addCell(c);
+			oldWork.removeCell(c);
+		}
+		removeLibrary(library);
+	}
+
+	/**
+	 * Migrates all libraries except HDI primitives and work to 
+	 * the work library.
+	 */
+	public void consolidateAllToWorkLibrary() {
+		List<EDIFLibrary> librariesToMigrate = new ArrayList<>();
+		for (EDIFLibrary l : getLibraries()) {
+			if (!l.isHDIPrimitivesLibrary() && !l.isWorkLibrary()) {
+				librariesToMigrate.add(l);
+			}
+		}
+		for (EDIFLibrary l : librariesToMigrate) {
+			migrateToWorkLibrary(l.getName());
+		}
+	}
+
+	
 	public void migrateCellAndSubCells(EDIFCell cell){
 		Queue<EDIFCell> cells = new LinkedList<>();
 		cells.add(cell);
@@ -910,6 +943,7 @@ public class EDIFNetlist extends EDIFName {
 				if(portInst.isTopLevelPort()){
 					// Going up in hierarchy
 					EDIFCellInst cellInst = getCellInstFromHierName(curr.getHierarchicalInstName());
+					if(cellInst == null) continue;
 					EDIFPortInst epr = cellInst.getPortInst(portInst.getPortInstNameFromPort());
 					if(epr == null || epr.getNet() == null) continue;
 					String hierName = EDIFTools.getHierarchicalRootFromPinName(curr.getHierarchicalInstName());
@@ -972,6 +1006,12 @@ public class EDIFNetlist extends EDIFName {
 		return map;
 	}
 
+	/**
+	 * This will be removed in the next release.  
+	 * Consider using {@link EDIFCell#getPortMap()} instead
+	 * @deprecated
+	 * @return
+	 */
 	public HashMap<String,EDIFPort> generateEDIFPortMap(){
 		HashMap<String,EDIFPort> map = new HashMap<String, EDIFPort>(); 
 		for(EDIFPort port : getTopCellInst().getCellType().getPorts()){

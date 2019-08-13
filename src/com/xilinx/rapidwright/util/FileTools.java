@@ -97,9 +97,11 @@ public class FileTools {
 	public static final String PYTHON_FOLDER_NAME = "python";
 	/** Folder where device files are kept */
 	public static final String DEVICE_FOLDER_NAME = DATA_FOLDER_NAME + File.separator + "devices";
-	/** File name of the EDIF library containing all Uniprims */
+	/** File name of the UnisimManager initialization data file (replaced HDI_PRIMITIVES_FILE_NAME and VALID_CELL_PLACEMENTS_FILE_NAME) */
+	public static final String UNISIM_DATA_FILE_NAME = DATA_FOLDER_NAME + File.separator + "unisim_data.dat";
+	/** File name of the EDIF library containing all Uniprims -- Will be removed in 2019.2 */
 	public static final String HDI_PRIMITIVES_FILE_NAME = DATA_FOLDER_NAME + File.separator + "hdi_primitives.edf";
-	/** File name of containing a kryo compressed map of valid cell placements per family type */
+	/** File name of containing a kryo compressed map of valid cell placements per family type -- Will be removed in 2019.2 */
 	public static final String VALID_CELL_PLACEMENTS_FILE_NAME = DATA_FOLDER_NAME + File.separator + "valid_cell_placements.dat";
 	/** File name created from Vivado for all supported parts for RapidWright */
 	public static final String PART_DUMP_FILE_NAME = DATA_FOLDER_NAME + File.separator + "partdump.csv";
@@ -776,14 +778,15 @@ public class FileTools {
 	public static String getRapidWrightPath(){
 		String path = System.getenv(RAPIDWRIGHT_VARIABLE_NAME);
 		if(path == null){
-			final File f = new File(Device.class.getProtectionDomain().getCodeSource().getLocation().getPath());
+			final File f = new File(FileTools.class.getProtectionDomain().getCodeSource().getLocation().getPath());
 			if(f.isDirectory()){
-				for(String dir : f.list()){
+				File rootFolder = f.getParentFile();
+				for(String dir : rootFolder.list()){
 					if(dir.equals(DATA_FOLDER_NAME)) {
 						MessageGenerator.briefMessage("WARNING: " + RAPIDWRIGHT_VARIABLE_NAME +
 							" is not set.  Proceeding with inferred location from Java execution path: " + 
-							f.getAbsolutePath());
-						return f.getAbsolutePath();
+							rootFolder.getAbsolutePath());
+						return rootFolder.getAbsolutePath();
 					}
 				}
 			}
@@ -808,7 +811,13 @@ public class FileTools {
 		String rwPath = getRapidWrightPath();
 		if(rwPath != null){
 			try {
-				return new FileInputStream(rwPath + File.separator + name);
+				File resourceFile = new File(rwPath + File.separator + name);
+				if(resourceFile.exists()) {
+					return new FileInputStream(resourceFile);
+				} else {
+					System.err.println("WARNING: " + RAPIDWRIGHT_VARIABLE_NAME + " is set to " + rwPath
+							+ " but the resource " + name + " is not present, will attempt to load from jar...");
+				}
 			} catch (FileNotFoundException e) {
 				System.err.println("ERROR: Failed to find RapidWright resource file "
 						+ rwPath + File.separator + name + ". Please check the installation path "
@@ -819,6 +828,23 @@ public class FileTools {
 		}
 		// Try getting it from inside the jar (classpath)
 		return FileTools.class.getResourceAsStream("/" + name.replace(File.separator, "/"));
+	}
+	
+	/**
+	 * Checks if a particular RapidWright file or jar resource exists. 
+	 * This will prioritize checking first in the location indicated by the 
+	 * RAPIDWRIGHT_PATH environment variable, then check in the location from
+	 * the running class files.  
+	 * @param name Name of the RapidWright resource file.  
+	 * @return True if the resource exists, false otherwise.
+	 */
+	public static boolean checkIfRapidWrightResourceExists(String name) {
+		String rwPath = getRapidWrightPath();
+		if(rwPath != null){
+			boolean foundFile = new File(rwPath + File.separator + name).exists();
+			if (foundFile) return foundFile;
+		}
+		return null != FileTools.class.getResourceAsStream("/" + name.replace(File.separator, "/"));
 	}
 	
 	/**
@@ -846,6 +872,7 @@ public class FileTools {
 	 * Gets the HDIPrimitivesResource (FileTools.HDI_PRIMITIVES_FILE_NAME) 
 	 * as an InputStream.  
 	 * @return Returns the input stream for the HDI Primitives resource 
+	 * @deprecated
 	 */
 	public static InputStream getHDIPrimitivesResourceStream(){
 		return getRapidWrightResourceInputStream(HDI_PRIMITIVES_FILE_NAME);
@@ -854,11 +881,20 @@ public class FileTools {
 	/**
 	 * Gets an input stream to the file containing valid cell placements of the hdi primitives.
 	 * @return An input stream to the valid cell placements map file.
+	 * @deprecated
 	 */
 	public static InputStream getValidCellPlacementsResourceStream(){
 		return getRapidWrightResourceInputStream(VALID_CELL_PLACEMENTS_FILE_NAME);
 	}
 
+	/**
+	 * Gets an input stream to the file containing valid cell placements of the hdi primitives.
+	 * @return An input stream to the valid cell placements map file.
+	 */
+	public static InputStream getUnisimDataResourceStream(){
+		return getRapidWrightResourceInputStream(UNISIM_DATA_FILE_NAME);
+	}
+	
 	/**
 	 * Gets an input stream to the file containing a CSV file of valid parts for RapidWright.
 	 * @return An input stream to the valid cell placements map file.
@@ -1375,6 +1411,9 @@ public class FileTools {
 				if(e.isDirectory()){
 					new File(destFilePath).mkdirs();
 				}else{
+					File currFile = new File(destFilePath);
+					String parentName = currFile.getParentFile().getAbsolutePath();
+					makeDirs(parentName);
 					BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(destFilePath));
 					int read = 0;
 					while( (read = zin.read(buffer)) != -1){

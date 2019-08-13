@@ -31,12 +31,14 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
 import java.util.PriorityQueue;
 import java.util.Queue;
 
 import com.xilinx.rapidwright.design.Cell;
 import com.xilinx.rapidwright.design.Design;
+import com.xilinx.rapidwright.design.DesignTools;
 import com.xilinx.rapidwright.design.Net;
 import com.xilinx.rapidwright.design.NetType;
 import com.xilinx.rapidwright.design.SitePinInst;
@@ -57,6 +59,9 @@ import com.xilinx.rapidwright.device.SiteTypeEnum;
 import com.xilinx.rapidwright.device.Tile;
 import com.xilinx.rapidwright.device.TileTypeEnum;
 import com.xilinx.rapidwright.device.Wire;
+import com.xilinx.rapidwright.edif.EDIFHierNet;
+import com.xilinx.rapidwright.edif.EDIFNetlist;
+import com.xilinx.rapidwright.edif.EDIFPortInst;
 import com.xilinx.rapidwright.tests.CodePerfTracker;
 import com.xilinx.rapidwright.util.MessageGenerator;
 import com.xilinx.rapidwright.util.Utils;
@@ -785,7 +790,7 @@ public class Router extends AbstractRouter {
 	 */
 	public static List<String> getAlternativeLUTInputs(SitePinInst currSink){
 		if(!currSink.isLUTInputPin()) return Collections.emptyList();
-		Cell lut = currSink.getConnectedCells().get(0);
+		Cell lut = DesignTools.getConnectedCells(currSink).iterator().next();
 		String currLutType = lut.getBELName();
 		String otherLutType = currLutType.endsWith("6LUT") ? currLutType.replace("6", "5") : currLutType.replace("5", "6");
 
@@ -809,7 +814,7 @@ public class Router extends AbstractRouter {
 	 * @param newPinName The new physical BEL pin on the lut to serve as the new input.
 	 */
 	public static void swapLUTInputPins(SitePinInst lutInput, String newPinName){
-		Cell lut = lutInput.getConnectedCells().get(0);
+		Cell lut = DesignTools.getConnectedCells(lutInput).iterator().next();
 		String existingName = "A" + lutInput.getName().charAt(1);
 		
 		String logPin = lut.removePinMapping(existingName);
@@ -1892,6 +1897,61 @@ public class Router extends AbstractRouter {
 			}			
 		}		
 	}
+	
+	/**
+	 * Assumes design is fully placed and that all site nets are routed
+	 * but that not all physical nets ({@link Net}) or physical pins 
+	 * ({@link SitePinInst}) have been created. TODO - Experimental stage
+	 */
+	public void elaboratePhysicalNets() {
+		Design d = getDesign();
+		EDIFNetlist n = d.getNetlist();
+		d.getNetlist().resetParentNetMap();
+		Map<String,String> parentNetMap = getDesign().getNetlist().getParentNetMap();
+		
+		// Build a reverse net (Parent Net -> Net Aliases)
+		Map<String,HashSet<String>> reverseNetMap = new HashMap<>();
+		for(Entry<String,String> e : parentNetMap.entrySet()){
+			HashSet<String> aliases = reverseNetMap.get(e.getValue());
+			if(aliases == null) {
+				aliases = new HashSet<>();
+				reverseNetMap.put(e.getValue(), aliases);
+			}
+			aliases.add(e.getKey());
+		}
+		
+		// For each aliased set of nets, find all primitive cell pins and ensure
+		// SitePinInsts exist on the net
+		for(Entry<String,HashSet<String>> e : reverseNetMap.entrySet()) {
+			Net parentNet = d.getNet(e.getKey());
+			if(parentNet == null) {
+				EDIFHierNet logicalNet = n.getHierNetFromName(e.getKey());
+				parentNet = new Net(logicalNet);
+			}
+			for(String alias : e.getValue()) {
+				EDIFHierNet aliasNet = n.getHierNetFromName(alias);
+				if(aliasNet == null) continue; // TODO - handle transformed prims
+				for(EDIFPortInst p : aliasNet.getNet().getPortInsts()) {
+					if(p.getCellInst() == null) continue; // Top-level/hier port
+					if(p.getCellInst().getCellType().isPrimitive()) {
+						// Create/ensure SitePinInst 
+						String cellName = aliasNet.getHierarchicalInstName(p);
+						Cell c = d.getCell(cellName);
+						if(c == null) continue; // TODO - Figure out why...
+						String sitePinName = c.getCorrespondingSitePinName(p.getName());
+						if(sitePinName == null) continue; //TODO - failed to figure out site pin
+						SitePinInst spi = c.getSiteInst().getSitePinInst(sitePinName);
+						if(spi == null) {
+							spi = parentNet.createPin(p.isOutput(), sitePinName, c.getSiteInst());
+						}
+					}
+				}
+			}
+			
+		}
+		
+	}
+	
 	
 	/**
 	 * This the central method for routing the design in this class.  This prepares

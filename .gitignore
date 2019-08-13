@@ -5,3 +5,6 @@
 /.gradle/
 .pydevproject
 /.settings/
+/bin/
+.idea
+*.iml
