@@ -24,6 +24,9 @@
  */
 package com.xilinx.rapidwright.router;
 
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -80,7 +83,7 @@ public class Router extends AbstractRouter {
 	private static HashMap<String,String> clkSitePIPNames;
 	private static HashSet<String> lutOutputPinNames;
 	
-	private static boolean allowWireOverlap = false;
+	private static boolean allowWireOverlap = true;
 	
 	public static boolean ENABLE_RIPUP = false; // TODO - This mode is WIP
 	
@@ -537,6 +540,11 @@ public class Router extends AbstractRouter {
 		// Iterate through all of the nodes in the queue, adding potential candidate nodes 
 		// as we go along. We are finished when we find the sink node.
 		boolean debug = false;
+
+		BufferedWriter bw = null;
+		if (debug) {
+			try { bw = new BufferedWriter(new FileWriter("/home/jamestho/route_output.txt")); } catch (IOException ioe) {}
+		}
 		
 		while(!queue.isEmpty()){
 			if(nodesProcessed > 100000){
@@ -544,7 +552,7 @@ public class Router extends AbstractRouter {
 				return;
 			}
 			RouteNode currNode = queue.remove();
-			if(debug) System.out.println(MessageGenerator.makeWhiteSpace(currNode.getLevel()) + currNode.toString() + " " + currNode.getIntentCode() + " *DQ*");
+			if(debug) try { bw.write(MessageGenerator.makeWhiteSpace(currNode.getLevel()) + currNode.toString() + " " + currNode.getIntentCode() + " *DQ*\n"); } catch (IOException ioe) {}
 			nodesProcessed++;
 			nextNode: for(Wire w : currNode.getConnections()){
 				if(currNode.equals(currSink) || (w.getWireIndex() == this.currSink.getWire() && w.getTile().equals(currSink.getTile()))){
@@ -598,8 +606,8 @@ public class Router extends AbstractRouter {
 					
 					// We are now done with the routing of this connection
 					successfulRoute = true;
-					if(debug) {
-						System.out.println("=========" + currNet.getName() + "::" + currSink.toString());
+					if(true) {
+						System.out.println("=========" + currNet.getName() + "::" + currSink.toString() + " (" + nodesProcessed + ")");
 						for(PIP p : pipList) System.out.println(p.toString());
 						System.out.println();
 					}
@@ -669,10 +677,12 @@ public class Router extends AbstractRouter {
 						if(tmp.getTile().getWireCount() > 0 && tmp.getConnections() != null){
 							// This looks like a possible candidate for our next node, we'll add it
 							setCost(tmp, w.isRouteThru());
+							/*
 							if(debug){ 
 								System.out.println(MessageGenerator.makeWhiteSpace(currNode.getLevel()) 
 										+ " -> " + tmp + " " + tmp.getIntentCode());
 							}
+							*/
 							if(queue.isEmpty() || tmp.getCost() < (queue.peek().getCost() + ceilingCost)){
 								visitedNodes.add(tmp);
 								queue.add(tmp);
@@ -684,6 +694,10 @@ public class Router extends AbstractRouter {
 					} 
 				}
 			}
+		}
+
+		if (debug) {
+			try { bw.close(); } catch (IOException ioe) {}
 		}
 	}
 	
@@ -700,10 +714,10 @@ public class Router extends AbstractRouter {
 	}
 	
 	private void checkAndAddClockPinSitePIP(SitePinInst currSource, SitePinInst currPin){
-		boolean currNetOutputFromBUF = currSource != null && currSource.isPinOnABuf();
+		boolean currNetOutputFromBUF = currSource == null || currSource.isPinOnABuf();
 		isCurrSinkAClkWire = (isClkPin(currSinkPin) || currSinkPin.getName().equals("C")) &&
 							  (currNetOutputFromBUF || currSinkPin.isPinOnABuf()) && 
-							  !currSource.getSiteTypeEnum().equals(SiteTypeEnum.CONFIG_SITE);
+                              (currSource == null || !currSource.getSiteTypeEnum().equals(SiteTypeEnum.CONFIG_SITE));
 		if(isCurrSinkAClkWire){
 			// Some clock pins need a site PIP to get fully routed
 			String rBelName = clkSitePIPNames.get(currPin.getName());
@@ -952,7 +966,7 @@ public class Router extends AbstractRouter {
 		if(t.getDevice().getSeries() == Series.Series7){
 			return tt == TileTypeEnum.INT_L || tt == TileTypeEnum.INT_R;
 		}
-		return tt == TileTypeEnum.INT;
+		return tt == TileTypeEnum.INT || tt == TileTypeEnum.RCLK_DSP_INTF_CLKBUF_L;
 	}
 	
 	/**

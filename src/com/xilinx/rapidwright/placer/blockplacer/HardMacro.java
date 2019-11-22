@@ -30,10 +30,7 @@ import com.xilinx.rapidwright.design.ModuleInst;
 //import com.xilinx.rapidwright.design.ModuleInst;
 import com.xilinx.rapidwright.design.Net;
 import com.xilinx.rapidwright.design.SiteInst;
-import com.xilinx.rapidwright.device.Device;
-import com.xilinx.rapidwright.device.PIP;
-import com.xilinx.rapidwright.device.Site;
-import com.xilinx.rapidwright.device.Tile;
+import com.xilinx.rapidwright.device.*;
 
 /**
  * This extends {@link ModuleInst} and is used by {@link BlockPlacer} and {@link BlockPlacer2}
@@ -64,6 +61,7 @@ public class HardMacro extends ModuleInst implements Comparable<Object> {
 	protected int right;
 	private int leftBound;
 	private int rightBound;
+	private int[] slrRows;
 	
 	public HardMacro(ModuleInst moduleInst) {
 		super(moduleInst);
@@ -71,6 +69,10 @@ public class HardMacro extends ModuleInst implements Comparable<Object> {
 		Device d = getModule().getDevice();
 		leftBound = d.getClockRegion("CLOCKREGION_X0Y0").getUpperLeft().getColumn();
 		rightBound = d.getClockRegion("CLOCKREGION_X1Y14").getLowerRight().getColumn();
+		slrRows = new int[d.getNumOfSLRs() - 1];
+		for (int i = 0; i < d.getNumOfSLRs() - 1; i++) {
+			slrRows[i] = d.getSLR(i).getUpperLeft().getRow();
+		}
 
 		setConnectedPortWires(new ArrayList<PortWire>());
 		connectedPaths = new HashSet<Path>();
@@ -100,7 +102,7 @@ public class HardMacro extends ModuleInst implements Comparable<Object> {
 	}
 
 	public boolean isValidPlacement(){
-		return isInCLRegion() && validSiteSet.contains(tempAnchorSite);
+		return isInCLRegion() && !crossesSLRs() && validSiteSet.contains(tempAnchorSite);
 	}
 	
 	public void setValidPlacements() {
@@ -169,12 +171,21 @@ public class HardMacro extends ModuleInst implements Comparable<Object> {
 	}
 
 	public void printLoc() {
-		System.out.printf("%s: %d/%d/%d (%d)/%d (%d)/%s\n", getName(), top, bottom,
+		System.out.printf("%s: %d/%d/%d(%d)/%d(%d)/%s\n", getName(), top, bottom,
 			left, leftBound, right, rightBound, tempAnchorSite.getName());
 	}
 
 	private boolean isInCLRegion() {
 		return left >= leftBound && right <= rightBound;
+	}
+
+	private boolean crossesSLRs() {
+		for (int i = 0; i < slrRows.length; i++) {
+			if (top < slrRows[i] && bottom > slrRows[i]) {
+				return true;
+			}
+		}
+		return false;
 	}
 	
 	/**

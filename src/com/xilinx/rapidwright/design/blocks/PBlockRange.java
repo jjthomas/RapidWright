@@ -42,6 +42,8 @@ public class PBlockRange {
 	private PBlockCorner lowerLeft;
 
 	private PBlockCorner upperRight;
+
+	private boolean isClockRegion;
 	
 	
 	public PBlockRange(Device dev, String range){
@@ -50,6 +52,7 @@ public class PBlockRange {
 		String lowerLeftName = range.substring(0, colonIndex);
 		String upperRightName = range.substring(colonIndex+1);
 		if(lowerLeftName.startsWith(PBlockCorner.CLOCK_REGION) && upperRightName.startsWith(PBlockCorner.CLOCK_REGION)){
+			isClockRegion = true;
 			ClockRegion lowerLeftCR = dev.getClockRegion(lowerLeftName);
 			ClockRegion upperRightCR = dev.getClockRegion(upperRightName);
 			if(lowerLeftCR == null || upperRightCR == null){
@@ -102,7 +105,8 @@ public class PBlockRange {
 	}
 	
 	public String toString(){
-		return lowerLeft.getName() + ":" + upperRight.getName();
+		return (isClockRegion ? "CLOCKREGION_" : "") + lowerLeft.getName() + ":" +
+				(isClockRegion ? "CLOCKREGION_" : "") + upperRight.getName();
 	}
 	
 	/**

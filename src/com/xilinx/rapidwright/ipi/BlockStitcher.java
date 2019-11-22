@@ -93,7 +93,7 @@ public class BlockStitcher {
 	
 	public static final boolean CREATE_ROUTED_DCP = false;
 	
-	public static final boolean OPEN_HAND_PLACER = false;
+	public static final boolean OPEN_HAND_PLACER = true;
 	
 	public static final boolean INSTANCE_PORT_IOs = true;
 	

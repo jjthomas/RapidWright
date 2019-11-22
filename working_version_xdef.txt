@@ -1,0 +1,19 @@
+1e4e54b24c471ea41d95a7b746799660e8e5b5e0 +
+
+diff --git a/src/com/xilinx/rapidwright/design/Design.java b/src/com/xilinx/rapidwright/design/Design.java
+index 1d7f3ac..ced4842 100644
+--- a/src/com/xilinx/rapidwright/design/Design.java
++++ b/src/com/xilinx/rapidwright/design/Design.java
+@@ -868,7 +868,10 @@ public class Design implements Serializable{
+                        }
+                }
+ 
+-               
++               return removeSiteInstKeepSitePins(instance);
++       }
++
++       public boolean removeSiteInstKeepSitePins(SiteInst instance) {
+                for(Net n : instance.getCTagMap().values()){
+                        n.removeCtag(instance);
+                }
+

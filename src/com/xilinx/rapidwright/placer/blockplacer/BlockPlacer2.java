@@ -190,7 +190,7 @@ public class BlockPlacer2 {
 		HardMacro mc = hardMacros.get(0); // memory controller
 
 		Device dev = design.getDevice(); 
-		Tile center = dev.getTile(dev.getRows()/2, 0);
+		Tile center = dev.getTile(dev.getRows()/2, dev.getColumns()/2);
 		PriorityQueue<Site> sites = new PriorityQueue<Site>(1024, new Comparator<Site>() {
 			public int compare(Site i, Site j) {return i.getTile().getManhattanDistance(center) - j.getTile().getManhattanDistance(center);}});
 		// Place hard macros for initial placement

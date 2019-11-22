@@ -11,15 +11,16 @@ import com.xilinx.rapidwright.router.Router;
 
 public class CreateShellKernelIF {
     public static void main(String[] args) {
-        String path = "/home/jamestho/blockCache/2018.2/d74dbc374ad21a9e/passthrough_4_StreamingCore_0_0_opt.dcp";
+        // String path = "/home/jamestho/blockCache/2018.2/d74dbc374ad21a9e/passthrough_4_StreamingCore_0_0_opt.dcp";
+        String path = "/home/jamestho/kernel_opt.dcp";
         Design kernel = Design.readCheckpoint(path);
         Design d = new Design("IF", Device.AWS_F1);
         EDIFCell top = d.getNetlist().getTopCell();
         int startSliceY = 539;
         int startSliceX = 11;
         int i = 0;
-        String instName = "inst";
-        EDIFCellInst curTopCellInst = kernel.getNetlist().getCellInstFromHierName(instName);
+        // EDIFCellInst curTopCellInst = kernel.getNetlist().getCellInstFromHierName("inst");
+        EDIFCellInst curTopCellInst = kernel.getNetlist().getTopCellInst();
         for (EDIFPort port : curTopCellInst.getCellType().getPorts()) {
             if (port.getName().equals("clock")) {
                 continue;
@@ -37,8 +38,10 @@ public class CreateShellKernelIF {
                 String belPin = i % 2 == 0 ? "4" : "5";
                 Cell slut = d.createAndPlaceCell("slut" + i, Unisim.LUT1,
                         "SLICE_X" + startSliceX + "Y" + (startSliceY - yOffset) + "/" + lutLetter + lutKind + "LUT");
+                slut.addProperty("INIT", "2'h2", EDIFValueType.STRING);
                 Cell klut = d.createAndPlaceCell("klut" + i, Unisim.LUT1,
                         "SLICE_X" + (startSliceX + 2) + "Y" + (startSliceY - yOffset) + "/" + lutLetter + lutKind + "LUT");
+                klut.addProperty("INIT", "2'h2", EDIFValueType.STRING);
                 System.out.println(slut.getSite() + " " + klut.getSite());
                 // System.out.printf("set_property LOCK_PINS {I0:A%s} [get_cell if/%s]\n", belPin, "slut" + i);
                 // System.out.printf("set_property LOCK_PINS {I0:A%s} [get_cell if/%s]\n", belPin, "klut" + i);
